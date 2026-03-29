@@ -1,0 +1,58 @@
+diff --color -Nur kbd-2.9.0/src/libkeymap/ksyms.c kbd-2.9.0/src/libkeymap/ksyms.c
+--- kbd-2.9.0/src/libkeymap/ksyms.c	2026-01-16 14:03:34.279491561 +0800
++++ kbd-2.9.0/src/libkeymap/ksyms.c	2026-01-16 14:05:17.860996561 +0800
+@@ -113,6 +113,36 @@
+ 
+ #undef ENTRY
+ 
++#ifndef HAVE_STRLCPY
++size_t strlcpy(char *dest, const char *src, size_t size)
++{
++    size_t ret = strlen(src);
++
++    if (size) {
++        size_t len = (ret >= size) ? size - 1 : ret;
++        memcpy(dest, src, len);
++        dest[len] = '\0';
++    }
++    return ret;
++}
++#endif
++
++#ifndef HAVE_STRLCAT
++size_t strlcat(char *dest, const char *src, size_t count)
++{
++    size_t dsize = strlen(dest);
++    size_t len = strlen(src);
++    size_t res = dsize + len;
++
++    dest += dsize;
++    count -= dsize;
++    if (len >= count) len = count-1;
++    memcpy(dest, src, len);
++    dest[len] = 0;
++    return res;
++}
++#endif
++
+ /* Functions for both dumpkeys and loadkeys. */
+
+ void lk_list_charsets(FILE *f)
+diff --color -Nur kbd-2.9.0/src/libkeymap/ksyms.h kbd-2.9.0/src/libkeymap/ksyms.h
+--- kbd-2.9.0/src/libkeymap/ksyms.h	2026-01-16 14:03:34.279491561 +0800
++++ kbd-2.9.0/src/libkeymap/ksyms.h	2026-01-16 14:05:45.215784808 +0800
+@@ -3,6 +3,14 @@
+ 
+ #include "keymap.h"
+ 
++#include <stdlib.h>
++#ifndef HAVE_STRLCPY
++size_t strlcpy(char *dest, const char *src, size_t size);
++#endif
++#ifndef HAVE_STRLCAT
++size_t strlcat(char *dest, const char *src, size_t count);
++#endif
++
+ typedef struct {
+ 	const unsigned short uni;
+ 	const char *name;
