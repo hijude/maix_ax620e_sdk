@@ -26,6 +26,14 @@ rootfs_img_size          := $(call KM2Bytes,$(ROOTFS_PARTITION_SIZE))
 MODIFY_FSTAB_FILE        := $(BUILD_PATH)/tools/modify_fstab.sh
 FSTAB_FILE               := $(DST_ROOTFS_DIR)/etc/fstab
 
+#buildroot_rootfs
+BUILDROOT_VERSION        := buildroot-2025.11
+SRC_BUILDROOT_ROOTFS_DIR := $(HOME_PATH)/rootfs/$(ARCH)/$(LIBC)/buildroot/$(BUILDROOT_VERSION)/output/images
+DST_BUILDROOT_ROOTFS_DIR := $(OUT_DIR)/buildroot_rootfs
+BUILDROOT_ROOTFS_IMG        := $(IMAGE_OUTDIR)/buildroot_rootfs.ext4
+BUILDROOT_ROOTFS_SPARSE_IMG := $(IMAGE_OUTDIR)/buildroot_rootfs_sparse.ext4
+BUILDROOT_ROOTFS_FSTAB_FILE := $(DST_BUILDROOT_ROOTFS_DIR)/etc/fstab
+
 #ubuntu_rootfs
 SRC_UBUNTU_ROOTFS_DIR    := $(HOME_PATH)/rootfs/$(ARCH)/$(LIBC)/ubuntu_rootfs
 DST_UBUNTU_ROOTFS_DIR    := $(OUT_DIR)/ubuntu_rootfs
@@ -33,16 +41,25 @@ UBUNTU_ROOTFS_IMG        := $(IMAGE_OUTDIR)/ubuntu_rootfs.ext4
 UBUNTU_ROOTFS_SPARSE_IMG := $(IMAGE_OUTDIR)/ubuntu_rootfs_sparse.ext4
 UBUNTU_ROOTFS_FSTAB_FILE := $(DST_UBUNTU_ROOTFS_DIR)/etc/fstab
 
+ifeq ($(use_buildroot_rootfs),)
+	use_buildroot_rootfs := no
+endif
 ifeq ($(use_ubuntu_rootfs),)
 	use_ubuntu_rootfs := yes
-	use_rootfs := no
-    $(info default use_ubuntu_rootfs for maixcam2)
+	$(info default use_ubuntu_rootfs for maixcam2)
 endif
-ifeq ($(use_ubuntu_rootfs),no)
+ifeq ($(use_buildroot_rootfs),yes)
+	use_buildroot_rootfs := yes
+	use_ubuntu_rootfs := no
+	use_rootfs := no
+    $(info use_buildroot_rootfs for maixcam2)
+else ifeq ($(use_ubuntu_rootfs),no)
+	use_buildroot_rootfs := no
 	use_ubuntu_rootfs := no
 	use_rootfs := yes
     $(info use_ubuntu_rootfs is not empty)
 else
+	use_buildroot_rootfs := no
 	use_ubuntu_rootfs := yes
 	use_rootfs := no
     $(info use_ubuntu_rootfs for maixcam2)
@@ -89,7 +106,7 @@ DST_KO_PATH       := $(OSDRV_OUT_PATH)/ko
 DST_KO_TYPE       := .ko
 endif
 
-.PHONY: prepare all install rootfs images rootfs_image bootfs bootfs_image
+.PHONY: prepare all install rootfs buildroot_rootfs ubuntu_rootfs images rootfs_image buildroot_rootfs_image ubuntu_rootfs_image bootfs bootfs_image
 
 default: all
 
@@ -101,7 +118,7 @@ ifneq ($(wildcard $(VALGRIND_PATH)),)
 SUPPORT_VALGRIND := yes
 endif
 
-all: prepare rootfs ubuntu_rootfs bootfs
+all: prepare rootfs buildroot_rootfs ubuntu_rootfs bootfs
 	@$(ECHO) -e $(GREEN)"\nBuild Rootfs success!!\n" $(DONE)
 
 prepare:
@@ -149,6 +166,41 @@ ifeq ($(SUPPORT_CPIO),TRUE)
 endif
 endif
 
+buildroot_rootfs:
+ifeq ($(strip $(use_buildroot_rootfs)),yes)
+	@$(ECHO) -e $(GREEN) "Making $@..." $(DONE)
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)
+ifeq ($(wildcard $(SRC_BUILDROOT_ROOTFS_DIR)/rootfs.tar),)
+	@echo "file $(SRC_BUILDROOT_ROOTFS_DIR)/rootfs.tar does not exist, please build the buildroot!"
+else
+	@rm -rf $(DST_BUILDROOT_ROOTFS_DIR)
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)
+	@tar -xf $(SRC_BUILDROOT_ROOTFS_DIR)/rootfs.tar -C $(DST_BUILDROOT_ROOTFS_DIR)
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/proc
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/sys
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/mnt
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/tmp
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/run
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/root
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/media
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/param
+	@$(MKDIR) $(DST_BUILDROOT_ROOTFS_DIR)/var/www
+	@$(MKDIR) $(DST_BUILDROOT_ROOTFS_DIR)/etc
+	@$(MKDIR) $(IMAGE_OUTDIR)
+ifeq ($(AX_SUPPORT_AB_PART),TRUE)
+	mkdir -p $(DST_BUILDROOT_ROOTFS_DIR)/etc/init.d/
+	@cp -rf rootfs/etc/init.d/* $(DST_BUILDROOT_ROOTFS_DIR)/etc/init.d/
+endif
+	@python3 $(COPY_FILE) $(PROJECT) $(PROJECT_MAK) $(SRC_ROOTFS_DIR) ubuntu_rootfs.filelist $(DST_BUILDROOT_ROOTFS_DIR)
+ifeq ($(ENABLE_SWUPDATE),TRUE)
+	@cp -rf swupdate/hwrevision $(DST_BUILDROOT_ROOTFS_DIR)/etc/hwrevision
+	@cp -rf $(COMM_SWUPDATE_PATH)/mkswu/swupdate.cfg $(DST_BUILDROOT_ROOTFS_DIR)/etc/swupdate.cfg
+endif
+	@chmod 755 $(MODIFY_FSTAB_FILE)
+	@bash $(MODIFY_FSTAB_FILE) $(BUILDROOT_ROOTFS_FSTAB_FILE) "$(FLASH_PARTITIONS)"
+endif
+endif
+
 ubuntu_rootfs:
 ifeq ($(strip $(use_ubuntu_rootfs)),yes)
 	@$(ECHO) -e $(GREEN) "Making $@..." $(DONE)
@@ -186,7 +238,7 @@ endif
 install:
 	@$(ECHO) -e $(GREEN) "rootfs $@..." $(DONE)
 
-image: rootfs_image ubuntu_rootfs_image bootfs_image
+image: rootfs_image buildroot_rootfs_image ubuntu_rootfs_image bootfs_image
 	@$(ECHO) -e $(GREEN) "images maked" $(DONE)
 
 bootfs_image:
@@ -266,6 +318,65 @@ ifeq ($(SUPPORT_CPIO),TRUE)
 endif
 endif
 
+buildroot_rootfs_image:
+ifeq ($(strip $(use_buildroot_rootfs)),yes)
+	@$(ECHO) -e $(GREEN) "making $@ ..." $(DONE)
+ifeq ($(wildcard $(SRC_BUILDROOT_ROOTFS_DIR)/rootfs.tar),)
+	@echo "file $(SRC_BUILDROOT_ROOTFS_DIR)/rootfs.tar does not exist, don't generate image file"
+else
+ifeq ($(strip $(SUPPORT_OPTEE)),TRUE)
+	@$(MKDIR) -p $(DST_BUILDROOT_ROOTFS_DIR)/$(LIB_OPTEE_PATH)
+	@cp -rf $(MSP_OUT_PATH)/ta/* $(DST_BUILDROOT_ROOTFS_DIR)/$(LIB_OPTEE_PATH)
+endif
+ifeq ($(SUPPORT_VALGRIND), yes)
+	@sed -i '/VALGRIND_LIB/{d}' $(DST_BUILDROOT_ROOTFS_DIR)/etc/profile
+	@sed -i '$$a\export VALGRIND_LIB=/opt/libexec/valgrind' $(DST_BUILDROOT_ROOTFS_DIR)/etc/profile
+endif
+ifneq ($(findstring yes, $(debugkconfig) $(debug)),)
+	echo "chmod 755 /soc/scripts/kmemleak_scan.sh" >> $(DST_BUILDROOT_ROOTFS_DIR)/etc/init.d/rcS
+	echo "/soc/scripts/kmemleak_scan.sh &" >> $(DST_BUILDROOT_ROOTFS_DIR)/etc/init.d/rcS
+endif
+
+# copy param soc opt files start
+	@$(ECHO) -e $(GREEN) "========= Copy /param dir files ... =========" $(DONE)
+	@python3 $(COPY_FILE) $(PROJECT) $(PROJECT_MAK) $(HOME_PATH) param.filelist $(DST_BUILDROOT_ROOTFS_DIR)/param
+	@$(ECHO) -e $(GREEN) "========= Copy /soc dir files ... =========" $(DONE)
+ifeq ($(debug), yes)
+	@python3 $(COPY_DEBUG) $(DEBUG_KO_PATH) $(DEBUG_KO_TYPE) $(DST_KO_PATH) $(DST_KO_TYPE)
+endif
+	@python3 $(COPY_FILE) $(PROJECT) $(PROJECT_MAK) $(HOME_PATH) soc.filelist $(DST_BUILDROOT_ROOTFS_DIR)/soc
+ifneq ($(strip $(CMM_POOL_PARAM)),)
+	@sed -i "s/cmmpool*=.*/cmmpool=$(CMM_POOL_PARAM)/g" $(DST_BUILDROOT_ROOTFS_DIR)/soc/scripts/auto_load_all_drv.sh
+endif
+	@$(ECHO) -e $(GREEN) "========= Copy /opt dir files ... =========" $(DONE)
+ifeq ($(debug), yes)
+	@python3 $(COPY_DEBUG) $(DEBUG_SO_PATH) $(DEBUG_SO_TYPE) $(DST_SO_PATH) $(DST_SO_TYPE)
+endif
+ifeq ($(asan), yes)
+	@mkdir -p $(DST_BUILDROOT_ROOTFS_DIR)/opt/lib
+	@cp -rf $(CROSS_ASANLIB_PATH)/libasan*.so* $(DST_BUILDROOT_ROOTFS_DIR)/opt/lib
+endif
+	@python3 $(COPY_FILE) $(PROJECT) $(PROJECT_MAK) $(HOME_PATH) opt.filelist $(DST_BUILDROOT_ROOTFS_DIR)/opt
+	./change_libs_attrs.sh $(DST_BUILDROOT_ROOTFS_DIR)/opt/lib
+
+ifeq ($(ENABLE_SWUPDATE), TRUE)
+	@mkdir -p $(DST_BUILDROOT_ROOTFS_DIR)/opt/swupdate/
+	@cp -rf $(MSP_OUT_PATH)/third-party/swupdate/* $(DST_BUILDROOT_ROOTFS_DIR)/opt/swupdate/
+	@cp -rf swupdate/swupdate.sh $(DST_BUILDROOT_ROOTFS_DIR)/opt/swupdate/bin
+	# @cp -rf $(COMM_SWUPDATE_PATH)/mkswu/public.pem $(DST_BUILDROOT_ROOTFS_DIR)/opt/swupdate/
+endif
+
+ifeq ($(SUPPORT_VALGRIND), yes)
+	@cp -rf $(VALGRIND_PATH)/bin/* $(DST_BUILDROOT_ROOTFS_DIR)/opt/bin
+	@cp -rf $(VALGRIND_PATH)/libexec $(DST_BUILDROOT_ROOTFS_DIR)/opt
+endif
+	@$(ECHO) -e $(GREEN) "========= Copy /opt dir files end ... =========" $(DONE)
+# copy param soc opt files end
+
+	$(MAKE_EXT4FS) -l $(ROOTFS_PARTITION_SIZE) -s $(BUILDROOT_ROOTFS_SPARSE_IMG) $(DST_BUILDROOT_ROOTFS_DIR)
+endif
+endif
+
 ubuntu_rootfs_image:
 ifeq ($(strip $(use_ubuntu_rootfs)),yes)
 	@$(ECHO) -e $(GREEN) "making $@ ..." $(DONE)
@@ -329,4 +440,5 @@ endif
 clean:
 	@$(ECHO) -e $(GREEN) "rootfs $@..." $(DONE)
 	@rm -rf $(DST_ROOTFS_DIR)
+	@rm -rf $(DST_BUILDROOT_ROOTFS_DIR)
 	@rm -rf $(DST_UBUNTU_ROOTFS_DIR)

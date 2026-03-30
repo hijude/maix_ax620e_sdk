@@ -108,7 +108,7 @@ UBOOT_A_PATH=$IMG_PATH/u-boot_signed.bin
 UBOOT_B_PATH=$IMG_PATH/u-boot_b_signed.bin
 ROOTFS_PATH=$IMG_PATH/rootfs_sparse.ext4
 UBUNTU_ROOTFS_PATH=$IMG_PATH/ubuntu_rootfs_sparse.ext4
-BUILDROOT_ROOTFS_PATH=$IMG_PATH/buildroot_rootfs.ext4
+BUILDROOT_ROOTFS_PATH=$IMG_PATH/buildroot_rootfs_sparse.ext4
 PARAM_PATH=$IMG_PATH/param_sparse.ext4
 SOC_PATH=$IMG_PATH/soc_sparse.ext4
 OPT_PATH=$IMG_PATH/opt_sparse.ext4
@@ -182,6 +182,7 @@ if [[ "x$BUILD_UBUNTU_AXP" == "x" ]]; then
 fi
 
 if [[ "$BUILD_BUILDROOT_AXP" = "yes" ]]; then
+	ROOTFS_PATH=$BUILDROOT_ROOTFS_PATH
 	if [[ "$PROJECT" == *nand* ]]; then
 		BOOT_PATH=$IMG_PATH/bootfs.ubi
 	else
